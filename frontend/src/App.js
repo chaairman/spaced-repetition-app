@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage'; // Create this page
 import DeckViewPage from './pages/DeckViewPage'; // <-- Add this line
 import StudyPage from './pages/StudyPage';
+import SettingsPage from './pages/SettingsPage';
 
 // Configure axios to send cookies
 axios.defaults.withCredentials = true;
@@ -81,6 +82,8 @@ function App() {
                 <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" replace />} />
                 {/* Study Route (Protected) <-- Add this route */}
                 <Route path="/study/:deckId" element={user ? <StudyPage /> : <Navigate to="/login" replace />} />
+                {/* Settings Route (Protected) <-- Add this route */}
+                <Route path="/settings" element={user ? <SettingsPage /> : <Navigate to="/login" replace />} />
                 {/* Default route: Navigate to dashboard if user exists, otherwise to login */}
                 <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
             </Routes>

@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth'); // Import auth routes
 const deckRoutes = require('./routes/deckRoutes'); // <-- Import deck routes
 const cardRoutes = require('./routes/cardRoutes'); // <-- Add this line
 const studyRoutes = require('./routes/studyRoutes');
+const integrationRoutes = require('./routes/integrationRoutes');
 
 require('./config/passport-setup'); // Run the passport setup code
 
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes); // Mount the authentication routes
 app.use('/api/decks', deckRoutes); // <-- Mount deck routes
 app.use('/api/cards', cardRoutes); // <-- Add this line
 app.use('/api/study', studyRoutes);
+app.use('/api/integrations', integrationRoutes);
 
 app.get('/api/test', (req, res) => {
     res.json({ message: 'Backend is running!' });

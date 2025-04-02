@@ -134,6 +134,9 @@ function DashboardPage({ user, setUser }) {
         <div>
             <h1>Dashboard</h1>
             {user && <p>Welcome, {user.display_name || user.email}!</p>}
+            <Link to="/settings" style={{ marginRight: '10px' }}>
+                <button>Settings</button>
+            </Link>
             <button onClick={handleLogout}>Logout</button>
 
             <hr />
