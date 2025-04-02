@@ -131,14 +131,43 @@ client.on('messageCreate', async message => { // Make the handler async
 });
 // --- End Message Handler ---
 
-
-// --- Placeholder Functions (to be implemented next) ---
-function compareAnswers(userAnswer, correctAnswer) {
-    console.log(`Comparing "${userAnswer}" vs "${correctAnswer}"`);
-    // TODO: Implement Levenshtein comparison (Chunk 9.5)
-    // For now, let's do a simple case-insensitive exact match
-    return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+// --- Helper function to normalize strings for comparison ---
+function normalize(str) {
+    if (!str) return '';
+    // Lowercase, trim whitespace, replace multiple spaces with single space
+    return str.toLowerCase().trim().replace(/\s+/g, ' ');
 }
+
+// --- Function to compare user answer with correct answer using Levenshtein ---
+// Make the function async to use await import()
+async function compareAnswers(userAnswer, correctAnswer) {
+    // --- Dynamically import the ESM 'leven' module ---
+    // Note: We often need '.default' when dynamically importing an ESM default export into CJS
+    const { default: leven } = await import('leven');
+    // --- End dynamic import ---
+
+    const normalizedUserAnswer = normalize(userAnswer);
+    const normalizedCorrectAnswer = normalize(correctAnswer);
+
+    // Handle empty strings edge case
+    if (normalizedUserAnswer === '' && normalizedCorrectAnswer === '') return true;
+    if (normalizedUserAnswer === '' || normalizedCorrectAnswer === '') return false;
+
+    // Now we can use the imported leven function
+    const distance = leven(normalizedUserAnswer, normalizedCorrectAnswer);
+    const maxLength = Math.max(normalizedUserAnswer.length, normalizedCorrectAnswer.length);
+
+    if (maxLength === 0) return distance === 0;
+
+    const similarity = 1 - (distance / maxLength);
+    const SIMILARITY_THRESHOLD = 0.8;
+
+    console.log(`Comparing "${normalizedUserAnswer}" vs "${normalizedCorrectAnswer}" -> Distance: ${distance}, MaxLength: ${maxLength}, Similarity: ${similarity.toFixed(2)}`);
+
+
+    return similarity >= SIMILARITY_THRESHOLD;
+}
+// --- End compareAnswers function ---
 
 async function sendFeedbackAndUpdateBackend(discordUserId, cardId, isCorrect, correctAnswer) {
     console.log(`Placeholder: Sending feedback (Correct: ${isCorrect}) for card ${cardId} to user ${discordUserId}`);
