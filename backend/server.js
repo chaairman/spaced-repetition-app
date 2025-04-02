@@ -5,6 +5,7 @@ const passport = require('passport');
 const cookieParser = require('cookie-parser');
 const cors = require('cors'); // <--- Import cors
 const authRoutes = require('./routes/auth'); // Import auth routes
+const deckRoutes = require('./routes/deckRoutes'); // <-- Import deck routes
 require('./config/passport-setup'); // Run the passport setup code
 
 const app = express();
@@ -27,7 +28,7 @@ app.use(passport.initialize()); // Initialize Passport
 
 // --- Routes ---
 app.use('/api/auth', authRoutes); // Mount the authentication routes
-
+app.use('/api/decks', deckRoutes); // <-- Mount deck routes
 app.get('/api/test', (req, res) => {
     res.json({ message: 'Backend is running!' });
 });
