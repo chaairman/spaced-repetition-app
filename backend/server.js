@@ -9,6 +9,7 @@ const deckRoutes = require('./routes/deckRoutes'); // <-- Import deck routes
 const cardRoutes = require('./routes/cardRoutes'); // <-- Add this line
 const studyRoutes = require('./routes/studyRoutes');
 const integrationRoutes = require('./routes/integrationRoutes');
+const { loginBot } = require('./bot');
 
 require('./config/passport-setup'); // Run the passport setup code
 
@@ -45,4 +46,6 @@ app.get('/api/test', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
+    // --- Start the Discord bot ---
+    loginBot();
 });
