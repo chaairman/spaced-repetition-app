@@ -1,16 +1,39 @@
 // backend/server.js
-require('dotenv').config(); // Loads variables from .env into process.env
+require('dotenv').config();
 const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3001; // Use port from .env, or 3001 as default
+const passport = require('passport');
+const cookieParser = require('cookie-parser');
+const cors = require('cors'); // <--- Import cors
+const authRoutes = require('./routes/auth'); // Import auth routes
+require('./config/passport-setup'); // Run the passport setup code
 
-// Example test route
+const app = express();
+const PORT = process.env.PORT || 3001;
+// app.use((req, res, next) => {
+//     console.log(`INCOMING REQUEST: ${req.method} ${req.originalUrl}`);
+//     next(); // Pass control to the next middleware/router
+//   });
+// --- CORS Configuration ---
+const corsOptions = {
+    origin: process.env.FRONTEND_URL, // Allow requests only from your frontend origin
+    credentials: true, // Allow cookies and authorization headers
+  };
+  app.use(cors(corsOptions)); // Use CORS middleware with options
+
+// --- Middleware ---
+app.use(cookieParser()); // Parse cookies attached to requests
+app.use(express.json()); // Parse JSON request bodies (if needed for other routes)
+app.use(passport.initialize()); // Initialize Passport
+
+// --- Routes ---
+app.use('/api/auth', authRoutes); // Mount the authentication routes
+
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'Backend is running!' });
+    res.json({ message: 'Backend is running!' });
 });
 
-// Add middleware later (like express.json(), cors(), authentication)
+// Add other API routes later (e.g., for decks, cards)
 
 app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+    console.log(`Server listening on http://localhost:${PORT}`);
 });
