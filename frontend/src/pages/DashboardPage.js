@@ -1,6 +1,8 @@
 // frontend/src/pages/DashboardPage.js
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom'; // <-- Add this line
+
 
 function DashboardPage({ user, setUser }) {
     const [decks, setDecks] = useState([]);
@@ -163,7 +165,10 @@ function DashboardPage({ user, setUser }) {
                         <ul>
                             {decks.map((deck) => (
                                 <li key={deck.id}>
-                                    {deck.name}
+                                    {/* Wrap the name in a Link */}
+                                    <Link to={`/decks/${deck.id}`}>
+                                        {deck.name}
+                                    </Link>
                                     {/* --- >>>> UPDATED BUTTONS <<<< --- */}
                                     <button
                                         style={{ marginLeft: '10px' }}

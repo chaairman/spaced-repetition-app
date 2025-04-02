@@ -71,6 +71,7 @@ import axios from 'axios'; // Make sure axios is installed
 // Import your page components (create basic placeholders if they don't exist)
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage'; // Create this page
+import DeckViewPage from './pages/DeckViewPage'; // <-- Add this line
 
 // Configure axios to send cookies
 axios.defaults.withCredentials = true;
@@ -140,7 +141,8 @@ function App() {
                  {/* Add other routes here */}
                  {/* Example Deck Route (Protected) */}
                  {/* <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" replace />} /> */}
-
+                {/* Deck View Route (Protected) <-- Add this route */}
+                <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" replace />} />
                 {/* Default route: Navigate to dashboard if user exists, otherwise to login */}
                 <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
             </Routes>

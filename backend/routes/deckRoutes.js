@@ -158,4 +158,91 @@ router.put('/:deckId', protect, async (req, res) => {
     }
 });
 
+
+// POST /api/decks/:deckId/cards - Create a new card in a specific deck
+router.post('/:deckId/cards', protect, async (req, res) => {
+    const userId = req.user.id;
+    const { deckId } = req.params;
+    const { frontText, backText } = req.body;
+
+    // --- Basic Validation ---
+    if (isNaN(parseInt(deckId, 10))) {
+        return res.status(400).json({ message: 'Invalid Deck ID format.' });
+    }
+    if (!frontText || typeof frontText !== 'string' || frontText.trim().length === 0) {
+        return res.status(400).json({ message: 'Card front text is required.' });
+    }
+    if (!backText || typeof backText !== 'string' || backText.trim().length === 0) {
+        return res.status(400).json({ message: 'Card back text is required.' });
+    }
+    // Optional: Add length limits if desired
+
+    try {
+        // --- Authorization Check: Ensure the user owns the deck ---
+        const deckCheckQuery = 'SELECT id FROM decks WHERE id = $1 AND user_id = $2';
+        const deckCheckResult = await db.query(deckCheckQuery, [deckId, userId]);
+
+        if (deckCheckResult.rows.length === 0) {
+            // Deck not found OR user doesn't own this deck
+            return res.status(404).json({ message: 'Deck not found or user not authorized to add cards to this deck.' });
+        }
+
+        // --- Database Insert ---
+        // Note: SRS fields (interval, ease_factor, next_review_at) use DB defaults
+        const insertQuery = `
+            INSERT INTO cards (deck_id, front_text, back_text)
+            VALUES ($1, $2, $3)
+            RETURNING id, deck_id, front_text, back_text, created_at, updated_at, interval, ease_factor, next_review_at;
+            -- Return the full new card object including default SRS values
+        `;
+        const values = [deckId, frontText.trim(), backText.trim()];
+        const { rows } = await db.query(insertQuery, values);
+
+        // --- Send Response ---
+        res.status(201).json(rows[0]); // 201 Created with the new card data
+
+    } catch (err) {
+        console.error(`Error creating card in deck ${deckId}:`, err);
+        res.status(500).json({ message: 'Server error creating card' });
+    }
+});
+
+// GET /api/decks/:deckId/cards - Fetch all cards for a specific deck
+router.get('/:deckId/cards', protect, async (req, res) => {
+    const userId = req.user.id;
+    const { deckId } = req.params;
+
+    // --- Basic Validation ---
+    if (isNaN(parseInt(deckId, 10))) {
+        return res.status(400).json({ message: 'Invalid Deck ID format.' });
+    }
+
+    try {
+        // --- Authorization Check: Ensure the user owns the deck ---
+        // (Same check as in POST /cards, could be refactored later)
+        const deckCheckQuery = 'SELECT id FROM decks WHERE id = $1 AND user_id = $2';
+        const deckCheckResult = await db.query(deckCheckQuery, [deckId, userId]);
+
+        if (deckCheckResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Deck not found or user not authorized to view these cards.' });
+        }
+
+        // --- Database Select ---
+        const selectQuery = `
+            SELECT id, deck_id, front_text, back_text, created_at, updated_at, interval, ease_factor, next_review_at
+            FROM cards
+            WHERE deck_id = $1
+            ORDER BY created_at ASC; -- Or however you want to order them
+        `;
+        const { rows } = await db.query(selectQuery, [deckId]);
+
+        // --- Send Response ---
+        res.status(200).json(rows); // Send the array of card objects
+
+    } catch (err) {
+        console.error(`Error fetching cards for deck ${deckId}:`, err);
+        res.status(500).json({ message: 'Server error fetching cards' });
+    }
+});
+
 module.exports = router;
