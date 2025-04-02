@@ -9,10 +9,11 @@ const deckRoutes = require('./routes/deckRoutes'); // <-- Import deck routes
 const cardRoutes = require('./routes/cardRoutes'); // <-- Add this line
 const studyRoutes = require('./routes/studyRoutes');
 const integrationRoutes = require('./routes/integrationRoutes');
-const internalRoutes = require('./routes/internalRoutes'); 
-const { loginBot } = require('./bot');
+const internalRoutes = require('./routes/internalRoutes.js');
+const reviewRoutes = require('./routes/reviewRoutes.js'); 
+const { loginBot } = require('./bot.js');
 
-require('./config/passport-setup'); // Run the passport setup code
+require('./config/passport-setup.js'); // Run the passport setup code
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,6 +40,7 @@ app.use('/api/cards', cardRoutes); // <-- Add this line
 app.use('/api/study', studyRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.get('/api/test', (req, res) => {
     res.json({ message: 'Backend is running!' });

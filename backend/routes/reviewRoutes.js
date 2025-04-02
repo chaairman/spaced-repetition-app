@@ -1,4 +1,8 @@
 // backend/routes/reviewRoutes.js
+
+// Add this log to be sure the file loads
+console.log('DEBUG: reviewRoutes.js is being loaded.');
+
 const express = require('express');
 const router = express.Router();
 const { protectBot } = require('../middleware/botAuthMiddleware');

@@ -169,12 +169,55 @@ async function compareAnswers(userAnswer, correctAnswer) {
 }
 // --- End compareAnswers function ---
 
+// --- Function to send feedback DM and update backend SRS ---
 async function sendFeedbackAndUpdateBackend(discordUserId, cardId, isCorrect, correctAnswer) {
-    console.log(`Placeholder: Sending feedback (Correct: ${isCorrect}) for card ${cardId} to user ${discordUserId}`);
-    // TODO: Send DM feedback (Chunk 9.6)
-    // TODO: Call backend API POST /api/reviews/discord (Chunk 9.6)
+    const outcome = isCorrect ? 'correct' : 'incorrect';
+    const feedbackMessage = isCorrect ?
+        '✅ Correct!' :
+        `❌ Incorrect. The answer was: ${correctAnswer}`;
+
+    // 1. Send DM Feedback
+    try {
+        const user = await client.users.fetch(discordUserId);
+        if (user) {
+            await user.send(feedbackMessage);
+            console.log(`Sent feedback (${outcome}) for card ${cardId} to user ${discordUserId}`);
+        } else {
+            console.warn(`Could not find user ${discordUserId} to send feedback.`);
+        }
+    } catch (dmError) {
+        console.error(`Error sending feedback DM to user ${discordUserId}:`, dmError.code, dmError.message);
+        // Continue to backend update even if feedback DM fails
+    }
+
+    // 2. Call Backend API to update SRS state
+    try {
+        const backendUrl = process.env.BACKEND_URL;
+        const apiKey = process.env.DISCORD_BOT_API_KEY;
+        if (!backendUrl || !apiKey) throw new Error("Backend URL or Bot API Key missing in env for feedback update.");
+
+        console.log(`Updating backend for card ${cardId} with outcome: ${outcome}`);
+        await axios.post(`${backendUrl}/api/reviews/discord`,
+            { // Request body
+                cardId: cardId,
+                outcome: outcome,
+                // Optionally send API key in body if not using header consistently
+                // botApiKey: apiKey
+            },
+            { // Config with headers
+                headers: { 'X-Bot-API-Key': apiKey }
+            }
+        );
+        console.log(`Backend update successful for card ${cardId}`);
+
+    } catch (apiError) {
+        console.error(`Error updating backend for card ${cardId}:`, apiError.response?.data || apiError.message);
+        // If the backend update fails, the card's SRS state won't be updated.
+        // This might lead to the card being presented again sooner than expected.
+        // Consider more robust error handling or retry logic later if needed.
+    }
 }
-// --- End Placeholder Functions ---
+// --- End sendFeedbackAndUpdateBackend function ---
 
 // --- Function called by the (future) scheduler to queue a review ---
 function queueUserReview(discordUserId, cardId) {
