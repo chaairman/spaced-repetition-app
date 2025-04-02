@@ -3,7 +3,6 @@ const router = require('express').Router();
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
 const { protect } = require('../middleware/authMiddleware'); // Import protect middleware
-require('dotenv').config({ path: '../../.env' }); // Adjust path as needed
 
 // Route to start the Google OAuth flow
 // This redirects the user to Google's consent screen

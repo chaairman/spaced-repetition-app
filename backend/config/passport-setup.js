@@ -5,7 +5,7 @@ const DiscordStrategy = require('passport-discord').Strategy;
 const jwt = require('jsonwebtoken'); 
 
 const db = require('./db'); // Import your db config
-require('dotenv').config({ path: '../.env' });
+
 
 // --- Google Strategy Configuration ---
 passport.use(

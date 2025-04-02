@@ -4,7 +4,6 @@ const router = express.Router();
 const passport = require('passport');
 const jwt = require('jsonwebtoken'); // <-- Ensure this is required
 const { protect } = require('../middleware/authMiddleware');
-require('dotenv').config({ path: '../../.env' }); // Adjust path if needed
 
 // --- Discord Integration Routes ---
 
