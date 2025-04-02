@@ -158,6 +158,36 @@ router.put('/:deckId', protect, async (req, res) => {
     }
 });
 
+// ****** INSERT NEW ROUTE HANDLER HERE ******
+// GET /api/decks/:deckId - Fetch details for a SINGLE deck
+router.get('/:deckId', protect, async (req, res) => {
+    const userId = req.user.id;
+    const { deckId } = req.params;
+
+    if (isNaN(parseInt(deckId, 10))) {
+        return res.status(400).json({ message: 'Invalid Deck ID format.' });
+    }
+
+    try {
+        const query = `
+            SELECT id, name, discord_review_enabled, created_at, updated_at
+            FROM decks
+            WHERE id = $1 AND user_id = $2;
+        `;
+        const { rows } = await db.query(query, [deckId, userId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Deck not found or user not authorized.' });
+        }
+
+        res.status(200).json(rows[0]); // Send the single deck object
+
+    } catch (err) {
+        console.error(`Error fetching deck details for deck ${deckId}:`, err);
+        res.status(500).json({ message: 'Server error fetching deck details' });
+    }
+});
+// ****** END OF NEW ROUTE HANDLER ******
 
 // POST /api/decks/:deckId/cards - Create a new card in a specific deck
 router.post('/:deckId/cards', protect, async (req, res) => {

@@ -13,30 +13,42 @@ function DeckViewPage() {
     const [newFrontText, setNewFrontText] = useState('');
     const [newBackText, setNewBackText] = useState('');
     const [createError, setCreateError] = useState(null); // Error specific to creation
-    // Function to fetch cards for this deck
-    const fetchCards = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            if (!backendUrl) throw new Error("Backend URL missing");
-            // TODO: Ideally, also fetch deck details like the name
-            // const deckResponse = await axios.get(`${backendUrl}/api/decks/${deckId}`); // Need this endpoint later
-            // setDeckName(deckResponse.data.name);
+// Function to fetch deck details and cards
+const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setDeckName(''); // Reset deck name
+    setCards([]);   // Reset cards
+    try {
+        if (!backendUrl) throw new Error("Backend URL missing");
 
-            const cardsResponse = await axios.get(`${backendUrl}/api/decks/${deckId}/cards`);
-            setCards(cardsResponse.data);
-        } catch (err) {
-            console.error(`Error fetching data for deck ${deckId}:`, err.response ? err.response.data : err);
-            setError(`Failed to load cards for deck ${deckId}. Does the deck exist and belong to you?`);
-            setCards([]);
-        } finally {
-            setLoading(false);
+        // --- Fetch Deck Details ---
+        const deckResponse = await axios.get(`${backendUrl}/api/decks/${deckId}`);
+        setDeckName(deckResponse.data.name); // Use the setter
+
+        // --- Fetch Cards ---
+        // Ensure this is the ONLY declaration of cardsResponse in this function
+        const cardsResponse = await axios.get(`${backendUrl}/api/decks/${deckId}/cards`);
+        setCards(cardsResponse.data);
+
+    } catch (err) {
+        console.error(`Error fetching data for deck ${deckId}:`, err.response ? err.response.data : err);
+        if (err.response && err.response.status === 404) {
+             setError(`Deck with ID ${deckId} not found or not owned by you.`);
+        } else {
+             setError(`Failed to load data for deck ${deckId}.`);
         }
-    }, [deckId, backendUrl]); // Re-run if deckId or backendUrl changes
+        setCards([]);
+        setDeckName('');
+    } finally {
+        setLoading(false);
+    }
+}, [deckId, backendUrl]); // Dependencies for useCallback
 
-    useEffect(() => {
-        fetchCards();
-    }, [fetchCards]); // Fetch cards when component mounts or fetchCards changes
+// useEffect hook to call fetchData on mount or when fetchData changes
+useEffect(() => {
+    fetchData();
+}, [fetchData]); // Dependency is the fetchData function itself
 
     // --- Add handler for creating a new card ---
     const handleAddCard = async (e) => {
