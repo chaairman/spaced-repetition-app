@@ -152,7 +152,10 @@ useEffect(() => {
         <div>
             {/* Add a link back to the dashboard */}
             <Link to="/dashboard">Back to Dashboard</Link>
-
+            {/* Add Study Link/Button */}
+            <Link to={`/study/${deckId}`} style={{ marginLeft: '15px' }}>
+                <button>Study This Deck</button>
+            </Link>
             <h1>Cards in Deck {deckName || deckId}</h1>
 
             {/* --- Add New Card Form --- */}

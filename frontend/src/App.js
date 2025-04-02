@@ -1,68 +1,3 @@
-// // frontend/src/App.js (Example using React Router)
-// import React, { useState, useEffect } from 'react';
-// import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-// import axios from 'axios'; // Make sure axios is installed
-
-// // Import your page components (create basic placeholders if they don't exist)
-// import LoginPage from './pages/LoginPage';
-// import DashboardPage from './pages/DashboardPage'; // Create this page
-
-// // Configure axios to send cookies
-// axios.defaults.withCredentials = true;
-
-// function App() {
-//     const [user, setUser] = useState(null);
-//     const [isLoading, setIsLoading] = useState(true); // Start loading
-
-//     useEffect(() => {
-//         // Check authentication status when the app loads
-//         const checkAuth = async () => {
-//             setIsLoading(true);
-//             try {
-//                 const backendUrl = process.env.REACT_APP_BACKEND_URL;
-//                 const response = await axios.get(`${backendUrl}/api/auth/me`);
-//                 setUser(response.data); // User is logged in
-//             } catch (error) {
-//                 // Handle 401 Unauthorized (not logged in) or other errors
-//                 if (error.response && error.response.status === 401) {
-//                     setUser(null); // User is not logged in
-//                 } else {
-//                     console.error("Error checking auth status:", error);
-//                     setUser(null); // Assume not logged in on error
-//                 }
-//             } finally {
-//                 setIsLoading(false); // Finished loading
-//             }
-//         };
-
-//         checkAuth();
-//     }, []); // Empty dependency array means run once on mount
-
-//     if (isLoading) {
-//         return <div>Loading application...</div>; // Or a spinner component
-//     }
-
-//     return (
-//         <Router>
-//             <Routes>
-//                 {/* Login Route */}
-//                 <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/dashboard" />} />
-
-//                 {/* Dashboard Route (Protected) */}
-//                 <Route path="/dashboard" element={user ? <DashboardPage user={user} setUser={setUser} /> : <Navigate to="/login" />} />
-
-//                  {/* Add other routes here */}
-//                  {/* Example Deck Route (Protected) */}
-//                  {/* <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" />} /> */}
-
-//                 {/* Default route */}
-//                 <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
-//             </Routes>
-//         </Router>
-//     );
-// }
-
-// export default App;
 // frontend/src/App.js (Example using React Router with added console logs)
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -72,6 +7,7 @@ import axios from 'axios'; // Make sure axios is installed
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage'; // Create this page
 import DeckViewPage from './pages/DeckViewPage'; // <-- Add this line
+import StudyPage from './pages/StudyPage';
 
 // Configure axios to send cookies
 axios.defaults.withCredentials = true;
@@ -143,6 +79,8 @@ function App() {
                  {/* <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" replace />} /> */}
                 {/* Deck View Route (Protected) <-- Add this route */}
                 <Route path="/decks/:deckId" element={user ? <DeckViewPage /> : <Navigate to="/login" replace />} />
+                {/* Study Route (Protected) <-- Add this route */}
+                <Route path="/study/:deckId" element={user ? <StudyPage /> : <Navigate to="/login" replace />} />
                 {/* Default route: Navigate to dashboard if user exists, otherwise to login */}
                 <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
             </Routes>
