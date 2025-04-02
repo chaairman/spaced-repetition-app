@@ -1,6 +1,6 @@
 # Product Requirements Document: V1 - Spaced Repetition App with Discord Integration
 
-**Version:** 1.0
+**Version:** 1.1 (Updated for Levenshtein distance)
 **Date:** April 2, 2025
 
 **1. Introduction & Goal**
@@ -20,7 +20,7 @@ This document outlines the requirements for the first version (V1) of a web-base
 * **Discord Bot Triggering:** Backend scheduler checks for due cards (in enabled decks) and triggers bot messages.
 * **Discord Deck Configuration:** Users can enable/disable Discord reviews per deck via web app settings.
 * **Discord Proactive Review:** Bot sends due card (Front) via DM.
-* **Discord Correctness Check:** Bot checks user's reply answer using **string similarity algorithms** (e.g., `string-similarity` library).
+* **Discord Correctness Check:** Bot checks user's reply answer using **string distance algorithms** (specifically Levenshtein distance, e.g., using the `leven` library) to determine similarity.
 * **Discord SRS Update:** Bot provides Correct/Incorrect feedback in DM. Bot notifies web app backend API to update card's SRS state, assuming "Good" for correct and "Again" for incorrect.
 * **Technology Stack:** React (Frontend), Node.js/Express (Backend), PostgreSQL (Database), discord.js (Discord Bot Library).
 
@@ -87,10 +87,10 @@ This document outlines the requirements for the first version (V1) of a web-base
 * **FR-DISCORD-5:** When the backend scheduler identifies a due card for Discord review, it shall trigger the Discord bot component.
 * **FR-DISCORD-6:** The Discord bot shall send a Direct Message (DM) to the linked user containing the Front Text of the due card (and potentially the Deck Name).
 * **FR-DISCORD-7:** The Discord bot shall listen for replies to its review DMs.
-* **FR-DISCORD-8:** Upon receiving a reply, the bot shall compare the user's answer text to the card's correct Back Text using a string similarity algorithm (e.g., Levenshtein distance, Dice's coefficient) with a predefined similarity threshold.
+* **FR-DISCORD-8:** Upon receiving a reply, the bot shall normalize the user's answer text and the card's correct Back Text (e.g., lowercase, trim whitespace) and compare them using the **Levenshtein distance algorithm** (e.g., via the `leven` library). It shall determine correctness by checking if the **normalized similarity derived from the distance** (e.g., `1 - distance / max_length`) meets a predefined threshold (e.g., 0.8).
 * **FR-DISCORD-9:** The Discord bot shall provide feedback in the DM based on the comparison:
-    * If Correct (above threshold): Reply with positive confirmation (e.g., "✅ Correct!").
-    * If Incorrect (below threshold): Reply indicating incorrectness and **show the correct Back Text**.
+    * If Correct (similarity meets or exceeds threshold): Reply with positive confirmation (e.g., "✅ Correct!").
+    * If Incorrect (similarity below threshold): Reply indicating incorrectness and **show the correct Back Text**.
 * **FR-DISCORD-10:** The Discord bot shall make an authenticated API call to the web application backend after processing the user's reply.
     * **FR-DISCORD-10.1:** The API call payload shall include the card identifier and the outcome (Correct/Incorrect).
 * **FR-DISCORD-11:** The web application backend shall expose an API endpoint to receive review outcomes from the Discord bot and update the corresponding card's SRS state according to FR-SRS-4.
@@ -167,19 +167,20 @@ This document outlines the requirements for the first version (V1) of a web-base
 **4.6. Discord Review Interaction**
 
 1.  **System (Backend Scheduler):** Runs periodically. Queries DB for due cards for users with linked Discord and `discord_review_enabled=true` on the deck.
-2.  **System (Backend):** If due cards found, selects one, retrieves details (Front, Back, CardID, DeckName, DiscordUserID). Sends task to Discord Bot service.
-3.  **System (Discord Bot):** Receives task. Finds user via Discord User ID.
-4.  **System (Discord Bot):** Sends DM: `Time to review! Deck: [Deck Name]\n\nFRONT: [Card Front Text]`. Stores `card_id` and `Back Text` associated with this prompt/user.
+2.  **System (Backend):** If due cards found, selects one or more per user, retrieves details (Front, Back, CardID, DeckName, DiscordUserID). Sends task(s) to Discord Bot service.
+3.  **System (Discord Bot):** Receives task(s). Finds user via Discord User ID. Manages sending prompts one at a time per user.
+4.  **System (Discord Bot):** Sends DM: `Time to review! Deck: [Deck Name]\n\nFRONT: [Card Front Text]`. Stores `card_id` and `Back Text` associated with this active prompt/user.
 5.  **User:** Receives DM, replies with answer text (e.g., `Vienna`).
-6.  **System (Discord Bot):** Receives reply. Retrieves stored `card_id` and `Back Text`.
-7.  **System (Discord Bot):** Compares user reply text with stored Back Text using string similarity algorithm.
-8.  **System (Discord Bot - Correct):** If similarity > threshold:
+6.  **System (Discord Bot):** Receives reply. Retrieves stored `card_id` and `Back Text` for the active prompt.
+7.  **System (Discord Bot):** Compares user reply text with stored Back Text using the **Levenshtein distance algorithm to calculate similarity** (after normalization).
+8.  **System (Discord Bot - Correct):** If calculated similarity meets or exceeds threshold:
     * Sends DM: `✅ Correct!`
     * Calls backend API (`POST /api/reviews/discord`) with `card_id` and `outcome=correct`.
-9.  **System (Discord Bot - Incorrect):** If similarity <= threshold:
+9.  **System (Discord Bot - Incorrect):** If calculated similarity is below threshold:
     * Sends DM: `❌ Incorrect. The answer was: [Correct Back Text]`
     * Calls backend API (`POST /api/reviews/discord`) with `card_id` and `outcome=incorrect`.
 10. **System (Backend):** API endpoint receives call. Updates card's SRS state based on `outcome` (mapping to "Good" or "Again"). Records review event.
+11. **System (Discord Bot):** Clears state for the completed prompt. If more cards are queued for the user, sends the next prompt.
 
 **5. Technology Stack (Proposed)**
 
@@ -187,7 +188,10 @@ This document outlines the requirements for the first version (V1) of a web-base
 * **Backend:** Node.js with Express.js framework
 * **Database:** PostgreSQL
 * **Discord Bot:** discord.js library (for Node.js)
+* **String Comparison Library:** `leven` (or similar maintained library for Levenshtein distance)
 * **Deployment:** TBD (e.g., Heroku, Render, Vercel, AWS/GCP/Azure)
+
+*(Added specific mention of `leven` or similar library to tech stack)*
 
 **6. Non-Functional Requirements (V1 Considerations)**
 

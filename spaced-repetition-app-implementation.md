@@ -1,11 +1,11 @@
 # Implementation Plan: V1 - Spaced Repetition App with Discord Integration
 
-**Version:** 1.0 (Based on PRD V1)
+**Version:** 1.1 (Updated for Levenshtein distance)
 **Date:** April 2, 2025
 
 ## 1. Overview & Goal Recap
 
-This plan outlines the technical approach for building V1 of the web-based spaced repetition application with proactive Discord review capabilities. The goal is to implement the core features defined in the PRD V1, focusing on Google authentication, basic deck/card management, web-based study using SRS, and the unique Discord review flow.
+This plan outlines the technical approach for building V1 of the web-based spaced repetition application with proactive Discord review capabilities. The goal is to implement the core features defined in the PRD V1.1, focusing on Google authentication, basic deck/card management, web-based study using SRS, and the unique Discord review flow using Levenshtein distance for answer checking.
 
 ## 2. Technology Stack (Confirmed)
 
@@ -14,6 +14,9 @@ This plan outlines the technical approach for building V1 of the web-based space
 * **Database:** PostgreSQL
 * **Discord Bot:** Node.js with `discord.js` library
 * **Scheduler:** `node-cron` library (running within the backend process)
+* **String Comparison Library:** `leven` (for Levenshtein distance)
+
+*(Added specific mention of `leven`)*
 
 ## 3. Database Schema (PostgreSQL)
 
@@ -103,9 +106,10 @@ We will start with the following core tables. SQL types are illustrative; exact 
 | `/integrations/discord/link` | GET | Required  | Redirect user to Discord OAuth flow.           | -                                    | Redirect                                              |
 | `/integrations/discord/callback` | GET | Required | Handles Discord redirect, links accounts.    | Discord `code` in query params       | Redirect to frontend settings page, stores link     |
 | `/reviews/discord`        | POST   | **Bot Only** | Receives review outcome from Discord bot.      | `{ cardId: "...", outcome: "correct" | "incorrect", botApiKey: "SECRET" }` | `{ message: "Discord review recorded" }`            |
+| `/internal/cards/:cardId` | GET    | **Bot Only** | Get card details needed for bot DM.            | `cardId` in path param, `botApiKey` header/query | `{ frontText, backText, deck: { name } }`           |
 
 * \* `cardCount`, `dueCount` can be calculated via DB query when fetching decks.
-* **Bot Only Auth:** The `/reviews/discord` endpoint needs protection. Use a simple shared secret API key (`botApiKey`) passed in the request body/header that only the backend and bot know.
+* **Bot Only Auth:** The `/reviews/discord` and `/internal/cards/:cardId` endpoints need protection. Use a simple shared secret API key (`botApiKey`) passed in a request header (e.g., `X-Bot-API-Key`) or body/query param that only the backend and bot know. Header is generally preferred.
 
 ## 5. Core Logic Implementation Details
 
@@ -124,7 +128,7 @@ We will start with the following core tables. SQL types are illustrative; exact 
     * Reference: Find a clear SM-2 implementation guide online.
 * **Discord Review Update (`POST /reviews/discord`):**
     * Input: `cardId`, `outcome` (correct, incorrect), `botApiKey`.
-    * Logic: Map outcome to a fixed web rating and use the *same* SRS update logic as above.
+    * Logic: Map outcome to a fixed web rating and use the *same* SRS update logic function as above.
         * `correct` -> Simulate a `"Good"` rating.
         * `incorrect` -> Simulate an `"Again"` rating.
     * Update the card's `interval`, `ease_factor`, `next_review_at` in the database.
@@ -147,7 +151,7 @@ We will start with the following core tables. SQL types are illustrative; exact 
     2.  Join with `decks` and `discord_links` tables.
     3.  Filter for cards where `decks.discord_review_enabled = true` AND a corresponding `discord_links` entry exists for the `decks.user_id`.
     4.  Group results by `discord_user_id`.
-    5.  For each user with due cards, trigger the Discord Bot logic (see section 6.3) with the list of due `cardId`s and the `discordUserId`.
+    5.  For each user with due cards, trigger the Discord Bot logic (see section 6.3) with the `discordUserId` and the list of their due `cardId`s.
 
 ## 6. Discord Bot (`discord.js`)
 
@@ -162,18 +166,19 @@ We will start with the following core tables. SQL types are illustrative; exact 
 
 ### 6.3. Receiving & Handling Review Tasks
 
-* The backend scheduler will likely call an exported function from the bot's code (if running in the same project/monorepo) or send a message (if separate processes, e.g., via Redis or RabbitMQ - keep simple for V1, maybe direct function call).
+* The backend scheduler will likely call an exported function from the bot's code (if running in the same project/monorepo) or send a message (if separate processes). Assume direct function call for V1.
 * Input to bot function: `discordUserId`, `dueCardIds: string[]`.
 * **Queue/Throttling Logic (per user):**
-    * Bot maintains an internal queue or list of due cards for each user.
-    * Uses the **in-memory map** `activePrompts = new Map<DiscordUserID, { cardId: string, backText: string, promptMessageId: string, timestamp: Date }>()`.
-    * If user `discordUserId` has cards in their queue AND does *not* have an entry in `activePrompts`:
-        1.  Dequeue one `cardId`.
-        2.  Fetch card details (`frontText`, `backText`) from the *backend API* or *database* (requires DB access or another API endpoint). Let's assume it calls the backend API: `GET /api/internal/cards/:cardId` (needs bot auth).
-        3.  Fetch the Discord User object using `discordUserId` via `discord.js`.
-        4.  Send DM: `Time to review! Deck: [Deck Name]\n\nFRONT: [Card Front Text]` (Need deck name - fetch card+deck info).
-        5.  Store `message.id` (the ID of the DM sent by the bot).
-        6.  Update map: `activePrompts.set(discordUserId, { cardId, backText, promptMessageId: message.id, timestamp: new Date() })`.
+    * Bot maintains an internal queue or list of due cards for each user (e.g., `userQueues = new Map<DiscordUserID, CardID[]>()`).
+    * Bot uses the **in-memory map** `activePrompts = new Map<DiscordUserID, { cardId: string, backText: string, promptMessageId: string, timestamp: Date }>()`.
+    * Bot has a function `sendNextPromptIfIdle(discordUserId)`:
+        1. If user `discordUserId` has cards in their queue AND does *not* have an entry in `activePrompts`:
+        2. Dequeue one `cardId`.
+        3. Fetch card details (`frontText`, `backText`, `deckName`) from the backend API: `GET /api/internal/cards/:cardId` (authenticated with `botApiKey`).
+        4. Fetch the Discord User object using `discordUserId` via `discord.js`.
+        5. Send DM: `Time to review! Deck: [Deck Name]\n\nFRONT: [Card Front Text]`.
+        6. Store `message.id` (the ID of the DM sent by the bot).
+        7. Update map: `activePrompts.set(discordUserId, { cardId, backText, promptMessageId: message.id, timestamp: new Date() })`.
 
 ### 6.4. State Management & Reply Handling
 
@@ -182,36 +187,43 @@ We will start with the following core tables. SQL types are illustrative; exact 
     1.  Get `discordUserId = message.author.id`.
     2.  Check if `activePrompts.has(discordUserId)`.
     3.  If yes, retrieve `{ cardId, backText, promptMessageId } = activePrompts.get(discordUserId)`.
-    4.  **(Optional but Recommended):** Check if `message.reference?.messageId === promptMessageId` to ensure the user is replying *directly* to the prompt message. If not, maybe ignore or prompt them to reply directly. For V1, can initially skip this check and assume latest DM is reply.
-    5.  Perform String Similarity Check (see 6.5).
-    6.  Send Feedback DM (see 6.6).
-    7.  Call Backend API (see 6.7).
-    8.  **Remove entry:** `activePrompts.delete(discordUserId)`.
-    9.  **Trigger next card:** Check user's queue again; if more cards are due, run the logic in 6.3 to send the next prompt.
+    4.  **(Optional but Recommended):** Check if `message.reference?.messageId === promptMessageId` to ensure the user is replying *directly* to the prompt message. If not, ignore.
+    5.  Perform String Comparison Check (see 6.5).
+    6.  Determine if `isCorrect` based on the comparison result.
+    7.  Send Feedback DM (see 6.6).
+    8.  Call Backend API (see 6.7) with `cardId` and `outcome` (`correct` or `incorrect`).
+    9.  **Remove entry:** `activePrompts.delete(discordUserId)`.
+    10. **Trigger next card:** Call `sendNextPromptIfIdle(discordUserId)` to potentially send the next queued card.
 
-### 6.5. String Similarity Check
+### 6.5. String Comparison Check (Levenshtein)
 
 * Get user's reply text: `userAnswer = message.content`.
 * Get correct answer: `correctAnswer = backText` (from the map).
-* **Normalize both:** `str.toLowerCase().trim()`. Consider removing extra whitespace/punctuation if needed.
-* Use `string-similarity` library: `similarity = stringSimilarity.compareTwoStrings(normalizedUserAnswer, normalizedCorrectAnswer)` (using Dice Coefficient).
-* Compare `similarity >= 0.8`.
+* **Normalize both:** Define a normalization function (e.g., `normalize(str) => str.toLowerCase().trim().replace(/\s+/g, ' ')`). Apply it: `normalizedUserAnswer = normalize(userAnswer)`, `normalizedCorrectAnswer = normalize(correctAnswer)`.
+* **Calculate Distance:** Use the `leven` library: `distance = leven(normalizedUserAnswer, normalizedCorrectAnswer);`.
+* **Calculate Normalized Similarity:**
+    * `const maxLength = Math.max(normalizedUserAnswer.length, normalizedCorrectAnswer.length);`
+    * `if (maxLength === 0) return distance === 0; // Handle empty strings`
+    * `const similarity = 1 - (distance / maxLength);`
+* **Compare:** `isCorrect = similarity >= 0.8;` (Using the 0.8 threshold).
 
 ### 6.6. Feedback Mechanism
 
-* **If Correct (similarity >= 0.8):** Send DM: `✅ Correct!`
-* **If Incorrect (similarity < 0.8):** Send DM: `❌ Incorrect. The answer was: ${backText}`
+* Based on the `isCorrect` value determined in 6.5:
+    * **If `isCorrect` is true:** Send DM: `✅ Correct!`
+    * **If `isCorrect` is false:** Send DM: `❌ Incorrect. The answer was: ${backText}`
 
 ### 6.7. Backend Communication
 
-* After processing the reply (correct or incorrect):
+* After processing the reply:
+    * Determine `outcome = isCorrect ? "correct" : "incorrect"`.
     * Make a `POST` request to the backend endpoint: `POST /api/reviews/discord`.
-    * Request Body: `{ cardId: cardId, outcome: (isCorrect ? "correct" : "incorrect"), botApiKey: "YOUR_SHARED_SECRET_KEY" }`.
+    * Request Body: `{ cardId: cardId, outcome: outcome, botApiKey: process.env.DISCORD_BOT_API_KEY }`. (Or send key in header).
     * Use `axios` or `node-fetch` for the API call. Ensure the `botApiKey` is stored securely as an environment variable.
 
 ### 6.8 Timeout Handling
 * Implement a periodic check (e.g., using `setInterval` every hour) that iterates through `activePrompts`.
-* If `Date.now() - entry.timestamp > TIMEOUT_DURATION` (e.g., 24 hours), remove the entry: `activePrompts.delete(userId)`. This frees the user to receive a new card later.
+* If `Date.now() - entry.timestamp > TIMEOUT_DURATION` (e.g., 24 hours), remove the entry: `activePrompts.delete(userId)`. Call `sendNextPromptIfIdle(userId)` afterwards to potentially send the next card.
 
 ## 7. Frontend (React)
 
@@ -272,15 +284,14 @@ We will start with the following core tables. SQL types are illustrative; exact 
 
 It's best to build incrementally:
 
-1.  **Project Setup:** Initialize Git repo, set up Node.js backend project (Express), React frontend project, install core dependencies (`express`, `pg`, `jsonwebtoken`, `passport`, `passport-google-oauth20`, `node-cron`, `discord.js`, `string-similarity`, `react`, `react-router-dom`, `axios`/`Workspace`). Set up `.env`.
+1.  **Project Setup:** Initialize Git repo, set up Node.js backend project (Express), React frontend project, install core dependencies (`express`, `pg`, `jsonwebtoken`, `passport`, `passport-google-oauth20`, `node-cron`, `discord.js`, `leven`, `react`, `react-router-dom`, `axios`/`Workspace`, `csv-parser`). Set up `.env`.
 2.  **Database Setup:** Create initial tables (`users`, `decks`, `cards`, `discord_links`) using SQL scripts or a migration tool (like `node-postgres-migrate`).
 3.  **Authentication:** Implement Google OAuth backend flow and JWT cookie setup. Implement basic React login page and `/api/auth/me` check.
 4.  **Deck CRUD:** Implement backend API endpoints for decks (Create, Read, Rename, Delete). Implement basic frontend UI to list, create, rename, delete decks.
 5.  **Card CRUD:** Implement backend API endpoints for cards (Create, Read, Edit, Delete within a deck). Implement frontend UI (e.g., in `DeckViewPage`) to manage cards.
 6.  **Web Study Flow:** Implement backend (`/study/...` routes) and frontend (`StudyPage`) for the web-based review cycle, including SRS updates.
 7.  **Discord Linking:** Implement backend (`/integrations/discord/...`) and frontend settings UI for linking Discord account.
-8.  **Discord Bot - Core:** Set up basic `discord.js` bot, connect to gateway. Implement backend scheduler (`node-cron`) to find due cards.
-9.  **Discord Bot - Review Flow:** Implement the bot receiving tasks, sending DMs, handling replies (state map, string similarity), providing feedback, and calling the backend `/reviews/discord` endpoint (including bot auth).
+8.  **Discord Bot - Core:** Set up basic `discord.js` bot, connect to gateway. Implement backend scheduler (`node-cron`) to find due cards. Create internal API endpoint for bot to fetch card details.
+9.  **Discord Bot - Review Flow:** Implement the bot receiving tasks, queueing, sending DMs, handling replies (state map, Levenshtein comparison), providing feedback, and calling the backend `/reviews/discord` endpoint (including bot auth). Implement timeout handling.
 10. **CSV Import:** Implement backend API and frontend UI for CSV uploads.
 11. **Refinement & Testing:** Thoroughly test all flows, refine UI/UX, fix bugs.
-
