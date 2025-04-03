@@ -1,7 +1,7 @@
 // frontend/src/pages/SettingsPage.js
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-// import axios from 'axios'; // Keep commented out for now
+import axios from 'axios'; // <-- Make sure axios is imported
 
 // Reuse the Button component (or import if moved)
 const Button = ({ onClick, children, className = '', variant = 'default', type = 'button', disabled = false }) => {
@@ -34,7 +34,7 @@ function SettingsPage() {
     });
     const [redirectMessage, setRedirectMessage] = useState(''); // Specifically for messages from redirect
 
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = process.env.REACT_APP_BACKEND_URL;
 
     // --- Effect for Redirect Messages & Initial Status Check ---
     useEffect(() => {
@@ -58,46 +58,42 @@ function SettingsPage() {
 
         // --- Fetch Actual Discord Link Status from Backend ---
         // TODO: Implement this backend endpoint later (GET /api/integrations/discord/status)
+        // --- >>> MODIFIED: Fetch Actual Discord Link Status <<< ---
         const fetchStatus = async () => {
+            // Keep initial loading message
             setDiscordLinkStatus({ status: 'loading', username: null, message: 'Checking connection...' });
-            // try {
-            //     if (!backendUrl) throw new Error("Backend URL missing");
-            //     const response = await axios.get(`${backendUrl}/api/integrations/discord/status`);
-            //     if (response.data && response.data.linked) {
-            //         setDiscordLinkStatus({
-            //             status: 'linked',
-            //             username: response.data.username || 'Unknown Username',
-            //             message: ''
-            //         });
-            //     } else {
-            //         setDiscordLinkStatus({ status: 'not_linked', username: null, message: '' });
-            //     }
-            // } catch (err) {
-            //     console.error("Error fetching Discord link status:", err);
-            //     setDiscordLinkStatus({
-            //         status: 'error',
-            //         username: null,
-            //         message: 'Could not fetch Discord connection status.'
-            //     });
-            // }
-            // --- MOCK IMPLEMENTATION FOR NOW ---
-            // Simulate a delay then set status based on initial assumption or default
-            setTimeout(() => {
-                if (initialStatusAssumption === 'linked') {
-                     setDiscordLinkStatus({ status: 'linked', username: 'YourDiscordUser#1234', message: '' }); // Placeholder username
-                } else if (initialStatusAssumption === 'error') {
-                    setDiscordLinkStatus({ status: 'error', username: null, message: 'Could not verify Discord connection.' });
+            try {
+                if (!backendUrl) throw new Error("Backend URL missing");
+
+                // *** UNCOMMENT AND USE THIS ***
+                const response = await axios.get(`${backendUrl}/api/integrations/discord/status`);
+                // Axios automatically includes credentials due to global setup
+
+                if (response.data && response.data.linked) {
+                    setDiscordLinkStatus({
+                        status: 'linked',
+                        username: response.data.username || 'Unknown Username', // Use username from backend
+                        message: ''
+                    });
+                } else {
+                    // Backend confirms no link exists
+                    setDiscordLinkStatus({ status: 'not_linked', username: null, message: '' });
                 }
-                 else {
-                     setDiscordLinkStatus({ status: 'not_linked', username: null, message: '' });
-                }
-            }, 500); // Simulate 0.5 second delay
-             // --- END MOCK ---
+            } catch (err) {
+                console.error("Error fetching Discord link status:", err.response ? err.response.data : err);
+                setDiscordLinkStatus({
+                    status: 'error',
+                    username: null,
+                    message: 'Could not fetch Discord connection status.' // Error message for the user
+                });
+            }
         };
 
         fetchStatus();
         // Only re-run if searchParams change (to process redirects)
+        // The status will be fetched *every time* the component mounts or params change.
     }, [searchParams, backendUrl]);
+    // --- >>> END MODIFIED useEffect <<< ---
 
 
     const handleConnectDiscord = () => {
