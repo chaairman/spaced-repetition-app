@@ -12,6 +12,7 @@ const integrationRoutes = require('./routes/integrationRoutes');
 const internalRoutes = require('./routes/internalRoutes.js');
 const reviewRoutes = require('./routes/reviewRoutes.js'); 
 const { loginBot } = require('./bot.js');
+const { initializeScheduler } = require('./scheduler.js');
 
 require('./config/passport-setup.js'); // Run the passport setup code
 
@@ -50,6 +51,7 @@ app.get('/api/test', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
+    initializeScheduler();
     // --- Start the Discord bot ---
     loginBot();
 });

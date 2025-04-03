@@ -226,13 +226,29 @@ function queueUserReview(discordUserId, cardId) {
         userQueues.set(discordUserId, queue);
     }
 
-    // Add cardId to the queue if not already present (optional check)
-    if (!queue.includes(cardId)) {
-        queue.push(cardId);
-        console.log(`Queued card ${cardId} for user ${discordUserId}. Queue size: ${queue.length}`);
+    // --- Add Checks Before Queuing ---
+    // 1. Check if card is already the active prompt
+    const activePrompt = activePrompts.get(discordUserId);
+    if (activePrompt && activePrompt.cardId === cardId) {
+        // console.log(`[Scheduler] Card ${cardId} is already the active prompt for user ${discordUserId}. Skipping queue.`);
+        return; // Don't queue if it's the active one
     }
 
+    // 2. Check if card is already in the queue
+    if (queue.includes(cardId)) {
+        // console.log(`[Scheduler] Card ${cardId} is already in the queue for user ${discordUserId}. Skipping queue.`);
+        return; // Don't queue duplicates
+    }
+    // --- End Checks ---
+
+
+    // Add cardId to the queue
+    queue.push(cardId);
+    console.log(`Queued card ${cardId} for user ${discordUserId}. Queue size: ${queue.length}`);
+
     // Attempt to send the next prompt immediately if the user is idle
+    // (This won't immediately send the card we just added if the user is busy,
+    // but it might trigger sending if the user *was* idle and the queue was empty before this).
     sendNextPromptIfIdle(discordUserId);
 }
 
@@ -271,10 +287,25 @@ async function sendNextPromptIfIdle(discordUserId) {
             console.log(`Workspaceed card data for ${nextCardId}`);
 
         } catch (error) {
-            console.error(`Error fetching card details for card ${nextCardId}:`, error.response?.data || error.message);
-            // Potentially remove bad card ID from queue here if fetch fails consistently
-            // queue.shift(); // Example: Remove if fetch failed
-            throw error; // Re-throw to be caught by outer finally
+            // --- MODIFY THIS CATCH BLOCK ---
+            console.error(`!!!!!!!! ERROR fetching card details for card ${nextCardId} !!!!!!!!`);
+            // Log the full error object if possible, or relevant parts
+            if (error.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                console.error('Error Response Data:', error.response.data);
+                console.error('Error Response Status:', error.response.status);
+                console.error('Error Response Headers:', error.response.headers);
+            } else if (error.request) {
+                // The request was made but no response was received
+                console.error('Error Request Data:', error.request);
+            } else {
+                // Something happened in setting up the request that triggered an Error
+                console.error('Error Message:', error.message);
+            }
+            console.error('Full Error Object:', error);
+            // --- END MODIFIED CATCH BLOCK ---
+            return; // Stop processing this card attempt
         }
 
         // --- Send DM Prompt ---
