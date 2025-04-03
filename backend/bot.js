@@ -11,6 +11,7 @@ console.log('Initializing Discord bot...');
 const userQueues = new Map();
 // Map<DiscordUserID, { cardId: string, backText: string, promptMessageId: string, timestamp: Date }> - Stores the currently active prompt for a user
 const activePrompts = new Map();
+const isUserProcessing = new Map();
 // --------------------------
 // --- Create a new Discord client ---
 // Define the intents your bot needs. For V1, we primarily need DMs.
@@ -32,16 +33,8 @@ const client = new Client({
 // --- Ready Event ---
 // This event fires when the bot successfully logs in and is ready.
 client.once('ready', () => {
-    // --- TEMPORARY TEST CODE (REMOVE AFTER TESTING Chunk 9.4) ---
-    // Replace with YOUR Discord User ID and a valid Card ID from your DB
-    const TEST_DISCORD_USER_ID = "520416366705115136"; // Use your actual ID
-    const TEST_CARD_ID = "2"; // Use a valid card ID from your DB
-
-    console.log(`\n--- Running temporary test: Queuing card ${TEST_CARD_ID} for user ${TEST_DISCORD_USER_ID} ---\n`);
-    // Directly call queueUserReview (NO if/else needed)
-    queueUserReview(TEST_DISCORD_USER_ID, TEST_CARD_ID);
-    // --- END TEMPORARY TEST CODE ---
     console.log(`Logged in to Discord as ${client.user.tag}!`);
+
 });
 
 // --- Login Function ---
@@ -100,14 +93,15 @@ client.on('messageCreate', async message => { // Make the handler async
             // We will create these functions next.
             try {
                  // Compare answer (Chunk 9.5)
-                 const isCorrect = compareAnswers(userAnswer, backText); // Needs compareAnswers function
+                 const isCorrect = await compareAnswers(userAnswer, backText); // Needs compareAnswers function
 
                  // Send feedback and update backend (Chunk 9.6)
                  await sendFeedbackAndUpdateBackend(userId, cardId, isCorrect, backText); // Needs this function
 
-                 // Trigger next prompt attempt (Chunk 9.7 / Reuse 9.3)
-                 // Check queue again now that the user is free
-                 sendNextPromptIfIdle(userId);
+                 // --- Trigger next prompt attempt (Chunk 9.7) ---
+                 console.log(`Review processed for card ${cardId}. Checking queue for user ${userId}...`);
+                 sendNextPromptIfIdle(userId); // <-- ADD THIS CALL HERE
+                 // --- End trigger next ---
 
              } catch (processingError) {
                  console.error(`Error processing reply for card ${cardId} from user ${userId}:`, processingError);
@@ -175,7 +169,6 @@ async function sendFeedbackAndUpdateBackend(discordUserId, cardId, isCorrect, co
     const feedbackMessage = isCorrect ?
         '✅ Correct!' :
         `❌ Incorrect. The answer was: ${correctAnswer}`;
-
     // 1. Send DM Feedback
     try {
         const user = await client.users.fetch(discordUserId);
@@ -244,77 +237,82 @@ function queueUserReview(discordUserId, cardId) {
 }
 
 // --- Function to send the next prompt if the user is not currently answering one ---
+// --- Function to send the next prompt (with processing lock) ---
 async function sendNextPromptIfIdle(discordUserId) {
-    // Check if user already has an active prompt
-    if (activePrompts.has(discordUserId)) {
-        // console.log(`User ${discordUserId} already has an active prompt. Waiting.`);
-        return;
+    // Check if user has active prompt OR is already being processed
+    if (activePrompts.has(discordUserId) || isUserProcessing.get(discordUserId)) {
+        return; // User is busy, do nothing now
     }
 
-    // --- Define queue HERE ---
     const queue = userQueues.get(discordUserId);
-    // --- Check queue exists and has cards ---
     if (!queue || queue.length === 0) {
-        // console.log(`No cards queued for user ${discordUserId}.`);
-        return;
+        return; // No cards queued
     }
 
-    // Get the next card ID but *don't remove it yet*
+    // --- Set the processing lock ---
+    isUserProcessing.set(discordUserId, true);
+
     const nextCardId = queue[0]; // Peek at the first card ID
     let cardData;
 
-    // --- Fetch card details from backend API ---
-    try {
-        const backendUrl = process.env.BACKEND_URL;
-        const apiKey = process.env.DISCORD_BOT_API_KEY;
-        if (!backendUrl || !apiKey) throw new Error("Backend URL or Bot API Key missing in env.");
+    try { // Wrap main logic in try...finally to ensure lock release
 
-        console.log(`Workspaceing details for card ${nextCardId} from backend...`);
-        const response = await axios.get(`${backendUrl}/api/internal/cards/${nextCardId}`, {
-            headers: { 'X-Bot-API-Key': apiKey }
-        });
-        cardData = response.data;
-        console.log(`Workspaceed card data for ${nextCardId}`);
+        // --- Fetch card details ---
+        try {
+            const backendUrl = process.env.BACKEND_URL;
+            const apiKey = process.env.DISCORD_BOT_API_KEY;
+            if (!backendUrl || !apiKey) throw new Error("Backend URL or Bot API Key missing.");
 
-    } catch (error) {
-        console.error(`Error fetching card details for card ${nextCardId}:`, error.response?.data || error.message);
-        // Consider removing the card ID from queue if it's invalid: queue.shift(); // Maybe add this later?
-        return; // Stop processing this card attempt
-    }
+            console.log(`Workspaceing details for card ${nextCardId} from backend...`);
+            const response = await axios.get(`${backendUrl}/api/internal/cards/${nextCardId}`, {
+                headers: { 'X-Bot-API-Key': apiKey }
+            });
+            cardData = response.data;
+            console.log(`Workspaceed card data for ${nextCardId}`);
 
-    // --- Send DM Prompt ---
-    try {
-        console.log(`Workspaceing Discord user ${discordUserId}...`);
-        const user = await client.users.fetch(discordUserId);
-        if (!user) throw new Error('User not found by client.');
+        } catch (error) {
+            console.error(`Error fetching card details for card ${nextCardId}:`, error.response?.data || error.message);
+            // Potentially remove bad card ID from queue here if fetch fails consistently
+            // queue.shift(); // Example: Remove if fetch failed
+            throw error; // Re-throw to be caught by outer finally
+        }
 
-        console.log(`Sending DM prompt for card ${nextCardId} to ${user.tag}...`);
-        const promptMessage = await user.send(
-            `Time to review!\n**Deck:** ${cardData.deck.name}\n\n**FRONT:**\n${cardData.frontText}`
-        );
-        console.log(`DM sent successfully to ${user.tag}. Message ID: ${promptMessage.id}`);
+        // --- Send DM Prompt ---
+        try {
+            console.log(`Workspaceing Discord user ${discordUserId}...`);
+            const user = await client.users.fetch(discordUserId);
+            if (!user) throw new Error('User not found by client.');
 
-        // --- If DM sent successfully, NOW remove card from queue and set active prompt ---
-        queue.shift(); // <-- Remove card from queue HERE (using the 'queue' variable defined above)
-        activePrompts.set(discordUserId, {
-            cardId: nextCardId,
-            backText: cardData.backText,
-            promptMessageId: promptMessage.id,
-            timestamp: new Date()
-        });
-        console.log('DEBUG: Updated activePrompts:', activePrompts);
+            console.log(`Sending DM prompt for card ${nextCardId} to ${user.tag}...`);
+            const promptMessage = await user.send(`Time to review!\n**Deck:** ${cardData.deck.name}\n\n**FRONT:**\n${cardData.frontText}`);
 
-    } catch (error) {
-        console.error(`Error sending DM or fetching user ${discordUserId}:`, error.code, error.message);
-        // Card remains in the queue if DM sending fails
+            console.log(`DM sent successfully to ${user.tag}. Message ID: ${promptMessage.id}`);
+
+
+            // If DM sent, NOW remove from queue and set active prompt
+            queue.shift(); // Success, so remove from queue
+            activePrompts.set(discordUserId, {
+                cardId: nextCardId,
+                backText: cardData.backText,
+                promptMessageId: promptMessage.id,
+                timestamp: new Date()
+            });
+            console.log('DEBUG: Updated activePrompts:', activePrompts);
+
+        } catch (error) {
+            console.error(`Error sending DM or fetching user ${discordUserId}:`, error.code, error.message);
+            // If DM fails, card remains in queue. Re-throw error.
+            throw error;
+        }
+
+    } finally {
+         // --- Release the processing lock ---
+         // Ensures lock is released even if errors occurred during fetch/DM
+         isUserProcessing.delete(discordUserId);
+         console.log(`Processing lock released for user ${discordUserId}`);
     }
 }
 // --- End sendNextPromptIfIdle function ---
-
-
-
-// ... (loginBot function remains the same) ...
-
 
 // Export the client, login function, AND the queueing function
 module.exports = {
