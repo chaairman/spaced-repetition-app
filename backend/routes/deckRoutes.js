@@ -1,8 +1,27 @@
 // backend/routes/deckRoutes.js
 const express = require('express');
+const multer = require('multer');
+const csv = require('csv-parser');
+const stream = require('stream');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware'); // Import protect middleware
 const db = require('../config/db'); // Import db connection
+
+// Configure Multer for in-memory storage
+// This is suitable for small CSV files. For very large files, disk storage might be better.
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Example: Limit file size to 5MB
+    fileFilter: (req, file, cb) => {
+        // Accept only CSV files
+        if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only CSV files are allowed.'), false);
+        }
+    }
+});
 
 // GET /api/decks - Fetch all decks for the logged-in user
 router.get('/', protect, async (req, res) => {
@@ -273,6 +292,136 @@ router.get('/:deckId/cards', protect, async (req, res) => {
         console.error(`Error fetching cards for deck ${deckId}:`, err);
         res.status(500).json({ message: 'Server error fetching cards' });
     }
+});
+
+// POST /api/decks/:deckId/cards/import - Import cards from CSV
+router.post('/:deckId/cards/import', protect, upload.single('csvFile'), async (req, res) => {
+    // 'protect' ensures req.user exists
+    // 'upload.single('csvFile')' processes the uploaded file named 'csvFile'
+    // The file buffer will be available in req.file.buffer
+
+    const userId = req.user.id;
+    const { deckId } = req.params;
+
+    // --- Validation ---
+    if (isNaN(parseInt(deckId, 10))) {
+        return res.status(400).json({ message: 'Invalid Deck ID format.' });
+    }
+    if (!req.file) {
+        return res.status(400).json({ message: 'No CSV file uploaded.' });
+    }
+
+    // --- Check Deck Ownership ---
+    try {
+        const deckCheckQuery = 'SELECT id FROM decks WHERE id = $1 AND user_id = $2';
+        const deckCheckResult = await db.query(deckCheckQuery, [deckId, userId]);
+        if (deckCheckResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Deck not found or user not authorized.' });
+        }
+    } catch (authError) {
+        console.error('Error checking deck ownership during import:', authError);
+        return res.status(500).json({ message: 'Server error checking deck ownership.' });
+    }
+
+    // --- Process CSV ---
+    const cardsToInsert = [];
+    const errors = [];
+    let rowCount = 0;
+    let successCount = 0;
+
+    // Create a readable stream from the buffer
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(req.file.buffer);
+
+    bufferStream
+        .pipe(csv({
+            mapHeaders: ({ header }) => header.trim().toLowerCase(), // Normalize headers
+            // Assuming CSV format: Column 1: front, Column 2: back
+            // If headers are present, it tries to match; otherwise uses index.
+            // Adjust headers array if your expected CSV header names are different.
+            headers: ['front_text', 'back_text'] // Expected headers (lowercase)
+        }))
+        .on('data', (row) => {
+            rowCount++;
+            const front = row.front_text ? row.front_text.trim() : '';
+            const back = row.back_text ? row.back_text.trim() : '';
+
+            // Basic validation for each row
+            if (front && back) {
+                cardsToInsert.push({ front, back });
+                successCount++;
+            } else {
+                errors.push(`Row ${rowCount}: Missing front or back text.`);
+            }
+        })
+        .on('end', async () => {
+            // --- Database Bulk Insert ---
+            if (cardsToInsert.length > 0) {
+                try {
+                    // Constructing a bulk insert query
+                    // IMPORTANT: For many rows, consider batching inserts or using COPY FROM STDIN if feasible.
+                    // This simple VALUES approach can be slow for very large files.
+                    const valuesPlaceholders = [];
+                    const valuesData = [];
+                    let paramIndex = 1; // Start parameter index from 1 for deckId
+
+                    cardsToInsert.forEach(card => {
+                        valuesPlaceholders.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+                        valuesData.push(deckId, card.front, card.back);
+                    });
+
+                    const insertQuery = `
+                        INSERT INTO cards (deck_id, front_text, back_text)
+                        VALUES ${valuesPlaceholders.join(', ')}
+                    `;
+                    // console.log("Executing Bulk Insert Query:", insertQuery); // Debug log
+                    // console.log("With Values:", valuesData); // Debug log
+
+                    await db.query(insertQuery, valuesData);
+                    console.log(`Successfully inserted ${cardsToInsert.length} cards for deck ${deckId}.`);
+
+                } catch (dbError) {
+                    console.error('Error during bulk card insert:', dbError);
+                    // Override previous success/error counts as the whole batch failed
+                    return res.status(500).json({
+                        message: 'Database error during card import.',
+                        successCount: 0,
+                        errorCount: rowCount, // All rows failed due to DB error
+                        errors: [`Database error: ${dbError.message || 'Unknown DB error'}`]
+                    });
+                }
+            }
+
+            // --- Send Final Response ---
+            console.log(`CSV processing finished for deck ${deckId}. Rows: ${rowCount}, Success: ${successCount}, Errors: ${errors.length}`);
+            res.status(200).json({
+                message: `Import finished. Processed ${rowCount} rows.`,
+                successCount: successCount,
+                errorCount: errors.length,
+                errors: errors // Send back specific row errors
+            });
+        })
+        .on('error', (parseError) => {
+            console.error('Error parsing CSV stream:', parseError);
+            res.status(400).json({ message: `CSV parsing error: ${parseError.message}` });
+        });
+});
+
+
+// Add multer error handling middleware (optional, but recommended)
+// Place this *after* all routes using 'upload' in this router file
+router.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        // A Multer error occurred when uploading.
+        console.error('Multer error:', err);
+        return res.status(400).json({ message: `File upload error: ${err.message}` });
+    } else if (err) {
+        // An unknown error occurred when uploading (e.g., fileFilter rejection).
+        console.error('Non-Multer upload error:', err);
+        return res.status(400).json({ message: err.message || 'File upload failed.' });
+    }
+    // If no error or not an upload error, pass to next middleware
+    next(err); // Pass other errors down the chain
 });
 
 module.exports = router;

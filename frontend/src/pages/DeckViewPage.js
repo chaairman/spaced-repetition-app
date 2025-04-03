@@ -9,11 +9,20 @@ function DeckViewPage() {
     const [deckName, setDeckName] = useState(''); // To store deck name optionally
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const backendUrl = process.env.REACT_APP_BACKEND_URL;
     const [newFrontText, setNewFrontText] = useState('');
     const [newBackText, setNewBackText] = useState('');
     const [createError, setCreateError] = useState(null); // Error specific to creation
-// Function to fetch deck details and cards
+    
+    // --- >> NEW STATE FOR CSV IMPORT << ---
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importStatus, setImportStatus] = useState(''); // e.g., "Importing...", "Success!", "Error"
+    const [importErrors, setImportErrors] = useState([]); // To store errors from backend response
+    const [importSuccessCount, setImportSuccessCount] = useState(0);
+    // --- >> END NEW STATE << ---
+
+    const backendUrl = process.env.REACT_APP_BACKEND_URL;
+    // Function to fetch deck details and cards
 const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -148,6 +157,77 @@ useEffect(() => {
         }
     };
     // --- End edit card handler ---
+
+    // --- >> NEW FUNCTION: Handle File Selection << ---
+    const handleFileChange = (event) => {
+        setSelectedFile(event.target.files[0]); // Get the first selected file
+        setImportStatus(''); // Clear previous status messages
+        setImportErrors([]);
+        setImportSuccessCount(0);
+    };
+    // --- >> END NEW FUNCTION << ---
+
+    // --- >> NEW FUNCTION: Handle CSV Import Submission << ---
+    const handleImportSubmit = async (event) => {
+        event.preventDefault(); // Prevent default form submission
+        if (!selectedFile) {
+            setImportStatus('Error: Please select a CSV file first.');
+            return;
+        }
+        if (!backendUrl) {
+             setImportStatus('Error: Backend URL not configured.');
+            return;
+        }
+
+        setIsImporting(true);
+        setImportStatus('Importing, please wait...');
+        setImportErrors([]);
+        setImportSuccessCount(0);
+        setError(null); // Clear general page errors
+
+        const formData = new FormData();
+        formData.append('csvFile', selectedFile); // 'csvFile' must match the backend upload.single() key
+
+        try {
+            const response = await axios.post(
+                `${backendUrl}/api/decks/${deckId}/cards/import`,            
+                formData,
+                {
+                    headers: {
+                        'Content-Type': 'multipart/form-data', // Axios usually sets this automatically for FormData, but doesn't hurt to be explicit
+                    },
+                    // withCredentials: true is set globally, so no need here unless configured differently
+                }
+            );
+
+            // Handle success response from backend
+            setImportStatus(`Import Complete: ${response.data.message}`);
+            setImportSuccessCount(response.data.successCount || 0);
+            if (response.data.errors && response.data.errors.length > 0) {
+                setImportErrors(response.data.errors);
+            }
+            setSelectedFile(null); // Clear the file input after successful attempt
+            // Refresh the card list to show newly imported cards
+            fetchData(); // Re-fetch deck data including cards
+
+        } catch (err) {
+            console.error('Error importing CSV:', err.response ? err.response.data : err);
+            const errorMsg = err.response?.data?.message || 'CSV import failed. Check console for details.';
+            setImportStatus(`Error: ${errorMsg}`);
+            setImportErrors(err.response?.data?.errors || []); // Show specific errors if backend sent them
+        } finally {
+            setIsImporting(false);
+            // Clear the file input visually (important!)
+            const fileInput = document.getElementById('csvFileInput'); // Ensure your input has this ID
+            if (fileInput) {
+                fileInput.value = ''; // Reset the input field
+            }
+             // Keep selectedFile state null/cleared here
+             setSelectedFile(null);
+        }
+    };
+     // --- >> END NEW FUNCTION << ---
+
     return (
         <div>
             {/* Add a link back to the dashboard */}
@@ -157,6 +237,39 @@ useEffect(() => {
                 <button>Study This Deck</button>
             </Link>
             <h1>Cards in Deck {deckName || deckId}</h1>
+            {/* --- >> NEW CSV IMPORT FORM << --- */}
+            <div style={{ border: '1px solid green', padding: '15px', margin: '15px 0' }}>
+                <h3>Import Cards from CSV</h3>
+                <p><small>Format: Two columns - 'Front Text', 'Back Text'. A header row is optional.</small></p>
+                <form onSubmit={handleImportSubmit}>
+                    <input
+                        type="file"
+                        id="csvFileInput" // Added ID for resetting
+                        accept=".csv, text/csv" // Specify accepted file types
+                        onChange={handleFileChange}
+                        disabled={isImporting} // Disable while importing
+                    />
+                    <button type="submit" disabled={!selectedFile || isImporting}>
+                        {isImporting ? 'Importing...' : 'Import Selected CSV'}
+                    </button>
+                </form>
+                {/* Display Import Status and Errors */}
+                {importStatus && <p style={{ fontWeight: 'bold', color: importStatus.startsWith('Error') ? 'red' : 'green' }}>{importStatus}</p>}
+                {importErrors.length > 0 && (
+                    <div style={{ color: 'red', marginTop: '5px' }}>
+                        <p>Import Errors:</p>
+                        <ul>
+                            {importErrors.map((errMsg, index) => (
+                                <li key={index}>{errMsg}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+                 {importSuccessCount > 0 && importErrors.length === 0 && !importStatus.startsWith('Error') && (
+                    <p style={{ color: 'green' }}>Successfully imported {importSuccessCount} cards.</p>
+                )}
+            </div>
+             {/* --- >> END NEW CSV IMPORT FORM << --- */}
 
             {/* --- Add New Card Form --- */}
             <form onSubmit={handleAddCard} style={{ marginBottom: '20px', padding: '10px', border: '1px solid lightblue' }}>
