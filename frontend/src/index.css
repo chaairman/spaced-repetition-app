@@ -1,20 +1,30 @@
 /* frontend/src/index.css */
 @tailwind base;
 @tailwind components;
-@tailwind utilities; /* <-- ADD THESE 3 LINES */
+@tailwind utilities;
 
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif; /* [cite: 1740] */
-  -webkit-font-smoothing: antialiased; /* [cite: 1741] */
-  -moz-osx-font-smoothing: grayscale; /* [cite: 1741] */
-  /* Apply Tailwind base styles */
-  @apply bg-slate-100 text-slate-900; /* Example: Light slate background, dark slate text */
+    sans-serif; /* */
+  -webkit-font-smoothing: antialiased; /* */
+  -moz-osx-font-smoothing: grayscale; /* */
+  /* Use colors from our custom palette */
+  @apply bg-brand-lightest text-brand-darkest; /* Example: Beige background, Dark blue text */
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace; /* [cite: 1741] */
+    monospace; /* */
 }
+
+/* You could define base button styles here using @apply if desired */
+/* Example (we'll refine this later):
+.btn-primary {
+  @apply bg-accent-primary hover:bg-accent-secondary text-brand-darkest font-bold py-2 px-4 rounded;
+}
+.btn-danger {
+   @apply bg-danger-dark hover:bg-danger-darker text-white font-bold py-2 px-4 rounded;
+}
+*/
